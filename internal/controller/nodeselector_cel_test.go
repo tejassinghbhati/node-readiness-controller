@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -55,7 +56,7 @@ var _ = Describe("NodeReadinessRule nodeSelector CEL validation", func() {
 		if err := k8sClient.List(celCtx, list); err == nil {
 			for i := range list.Items {
 				r := &list.Items[i]
-				if len(r.Name) >= 12 && r.Name[:12] == "cel-selector" {
+				if strings.HasPrefix(r.Name, "cel-selector-") {
 					r.Finalizers = nil
 					_ = k8sClient.Update(celCtx, r)
 					_ = k8sClient.Delete(celCtx, r)
