@@ -64,24 +64,35 @@ docker pull $REPO:$TAG
 ```
 ### Option 2: Helm Chart
 
-The chart lives in the repository under `charts/node-readiness-controller`. Published chart releases via `registry.k8s.io` OCI are still work in progress, so install it from a checkout for now.
+The official Helm chart is published to the OCI registry at `registry.k8s.io/node-readiness-controller/charts/node-readiness-controller`.
 
 ```sh
-git clone https://github.com/kubernetes-sigs/node-readiness-controller.git
-cd node-readiness-controller
+# Replace with the desired version
+VERSION=0.5.0
 
-helm install node-readiness-controller ./charts/node-readiness-controller \
+helm install node-readiness-controller \
+  oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller \
+  --version ${VERSION} \
   --namespace nrr-system --create-namespace
 ```
 
-Requires Helm 3.x. This deploys the controller with the same defaults as the standard manifest: leader election on, metrics off, and the validating webhook off.
+Requires Helm 3.8+ (native OCI support). This deploys the controller with the same defaults as the standard manifest: leader election on, metrics off, and the validating webhook off.
+
+> [!NOTE]
+> You can also install the chart directly from a local repository checkout if developing locally:
+> ```sh
+> helm install node-readiness-controller ./charts/node-readiness-controller \
+>   --namespace nrr-system --create-namespace
+> ```
 
 For anything beyond a couple of overrides, keep your settings in a file instead of a long `--set` list:
 
 ```sh
-helm show values ./charts/node-readiness-controller > custom-values.yaml
+helm show values oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller --version ${VERSION} > custom-values.yaml
 
-helm install node-readiness-controller ./charts/node-readiness-controller \
+helm install node-readiness-controller \
+  oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller \
+  --version ${VERSION} \
   --namespace nrr-system --create-namespace \
   -f custom-values.yaml
 ```
@@ -99,7 +110,9 @@ Everything beyond the core controller is opt-in, matching the kustomize componen
 The webhook rejects rules whose taint key and effect collide with an existing rule over an overlapping node selector, so it is worth enabling in production.
 
 ```sh
-helm install node-readiness-controller ./charts/node-readiness-controller \
+helm install node-readiness-controller \
+  oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller \
+  --version ${VERSION} \
   --namespace nrr-system --create-namespace \
   --set certManager.enabled=true \
   --set webhook.enabled=true \
@@ -152,12 +165,12 @@ nodeReadinessRules:
 
 #### Upgrading
 
-Pull the version of the chart you want and upgrade the release in place. Values you set at install time are carried over, so only pass the ones you are changing:
+Upgrade the release in place using the OCI chart. Values you set at install time are carried over, so only pass the ones you are changing:
 
 ```sh
-git pull
-
-helm upgrade node-readiness-controller ./charts/node-readiness-controller \
+helm upgrade node-readiness-controller \
+  oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller \
+  --version ${VERSION} \
   --namespace nrr-system \
   -f custom-values.yaml
 ```
@@ -167,7 +180,10 @@ helm upgrade node-readiness-controller ./charts/node-readiness-controller \
 Check what changed before applying it to a live cluster:
 
 ```sh
-helm diff upgrade node-readiness-controller ./charts/node-readiness-controller --namespace nrr-system   # needs the helm-diff plugin
+helm diff upgrade node-readiness-controller \
+  oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller \
+  --version ${VERSION} \
+  --namespace nrr-system   # needs the helm-diff plugin
 ```
 
 Read the CRD note below first. Helm will not update the CRD for you, so a chart bump that changes the schema needs that step done by hand.
@@ -179,7 +195,7 @@ Helm installs the CRD from the chart's `crds/` directory on first install only. 
 Before moving to a chart version that changes the `NodeReadinessRule` schema, apply the CRD yourself:
 
 ```sh
-kubectl apply -f charts/node-readiness-controller/crds/nodereadinessrules.readiness.node.x-k8s.io.yaml
+kubectl apply -f https://github.com/kubernetes-sigs/node-readiness-controller/releases/download/${VERSION}/crds.yaml
 ```
 
 Skipping this leaves the old schema in place, and rules using newly added fields are rejected by the API server even though the controller supports them.
