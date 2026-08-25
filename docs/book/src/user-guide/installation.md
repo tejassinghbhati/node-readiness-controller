@@ -67,32 +67,39 @@ docker pull $REPO:$TAG
 The official Helm chart is published to the OCI registry at `registry.k8s.io/node-readiness-controller/charts/node-readiness-controller`.
 
 ```sh
-# Replace with the desired version
-VERSION=0.5.0
+# Chart version, which is independent of the controller release tag above.
+CHART_VERSION=0.5.0
 
 helm install node-readiness-controller \
   oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller \
-  --version ${VERSION} \
+  --version ${CHART_VERSION} \
   --namespace nrr-system --create-namespace
 ```
 
 Requires Helm 3.8+ (native OCI support). This deploys the controller with the same defaults as the standard manifest: leader election on, metrics off, and the validating webhook off.
 
 > [!NOTE]
-> You can also install the chart directly from a local repository checkout if developing locally:
+> You can also install the chart from a local checkout when developing:
 > ```sh
 > helm install node-readiness-controller ./charts/node-readiness-controller \
->   --namespace nrr-system --create-namespace
+>   --namespace nrr-system --create-namespace \
+>   --set image.tag=v0.5.0
 > ```
+>
+> Set `image.tag` explicitly here. The real chart and app versions are injected at
+> package time by `make build-helm`, so `Chart.yaml` in the repository keeps a
+> placeholder `appVersion`. Installing straight from a checkout without an override
+> therefore deploys whatever that placeholder points at rather than the release you
+> checked out.
 
 For anything beyond a couple of overrides, keep your settings in a file instead of a long `--set` list:
 
 ```sh
-helm show values oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller --version ${VERSION} > custom-values.yaml
+helm show values oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller --version ${CHART_VERSION} > custom-values.yaml
 
 helm install node-readiness-controller \
   oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller \
-  --version ${VERSION} \
+  --version ${CHART_VERSION} \
   --namespace nrr-system --create-namespace \
   -f custom-values.yaml
 ```
@@ -112,7 +119,7 @@ The webhook rejects rules whose taint key and effect collide with an existing ru
 ```sh
 helm install node-readiness-controller \
   oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller \
-  --version ${VERSION} \
+  --version ${CHART_VERSION} \
   --namespace nrr-system --create-namespace \
   --set certManager.enabled=true \
   --set webhook.enabled=true \
@@ -170,7 +177,7 @@ Upgrade the release in place using the OCI chart. Values you set at install time
 ```sh
 helm upgrade node-readiness-controller \
   oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller \
-  --version ${VERSION} \
+  --version ${CHART_VERSION} \
   --namespace nrr-system \
   -f custom-values.yaml
 ```
@@ -182,7 +189,7 @@ Check what changed before applying it to a live cluster:
 ```sh
 helm diff upgrade node-readiness-controller \
   oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller \
-  --version ${VERSION} \
+  --version ${CHART_VERSION} \
   --namespace nrr-system   # needs the helm-diff plugin
 ```
 
@@ -192,10 +199,14 @@ Read the CRD note below first. Helm will not update the CRD for you, so a chart 
 
 Helm installs the CRD from the chart's `crds/` directory on first install only. It does not upgrade or remove it on `helm upgrade` or `helm uninstall`.
 
-Before moving to a chart version that changes the `NodeReadinessRule` schema, apply the CRD yourself:
+Before moving to a chart version that changes the `NodeReadinessRule` schema, apply the CRD yourself. Use the controller release that the chart version ships, which `helm show chart` reports as its `appVersion`:
 
 ```sh
-kubectl apply -f https://github.com/kubernetes-sigs/node-readiness-controller/releases/download/${VERSION}/crds.yaml
+RELEASE=$(helm show chart \
+  oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller \
+  --version ${CHART_VERSION} | awk '/^appVersion:/ {print $2}')
+
+kubectl apply -f https://github.com/kubernetes-sigs/node-readiness-controller/releases/download/${RELEASE}/crds.yaml
 ```
 
 Skipping this leaves the old schema in place, and rules using newly added fields are rejected by the API server even though the controller supports them.
