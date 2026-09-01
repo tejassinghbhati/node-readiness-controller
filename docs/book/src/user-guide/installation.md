@@ -78,24 +78,20 @@ helm install node-readiness-controller \
 
 Requires Helm 3.8+ (native OCI support). This deploys the controller with the same defaults as the standard manifest: leader election on, metrics off, and the validating webhook off.
 
-> [!NOTE]
-> You can also install the chart from a local checkout when developing:
-> ```sh
-> helm install node-readiness-controller ./charts/node-readiness-controller \
->   --namespace nrr-system --create-namespace \
->   --set image.tag=v0.5.0
-> ```
->
-> Set `image.tag` explicitly here. The real chart and app versions are injected at
-> package time by `make build-helm`, so `Chart.yaml` in the repository keeps a
-> placeholder `appVersion`. Installing straight from a checkout without an override
-> therefore deploys whatever that placeholder points at rather than the release you
-> checked out.
-
-For anything beyond a couple of overrides, keep your settings in a file instead of a long `--set` list:
+`helm show values` lists everything the chart exposes, and redirecting it gives you a starting point to edit:
 
 ```sh
 helm show values oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller --version ${CHART_VERSION} > custom-values.yaml
+```
+
+Override them with `--set`, or from a file with `-f`:
+
+```sh
+helm install node-readiness-controller \
+  oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller \
+  --version ${CHART_VERSION} \
+  --namespace nrr-system --create-namespace \
+  --set metrics.enabled=true
 
 helm install node-readiness-controller \
   oci://registry.k8s.io/node-readiness-controller/charts/node-readiness-controller \
@@ -144,31 +140,6 @@ The values under `controller` map to the manager's own flags, and each one is on
 | `controller.pprofBindAddress` | `--pprof-bind-address` | unset, disabled |
 
 Raising the two concurrency values is the usual response to readiness taints lagging behind node joins on a large cluster. `enableNodeStateMetrics` adds the per-rule `node_readiness_nodes_by_state` gauge at the cost of extra API reads on node updates, so turn it on when you want the fleet view and can afford the reads.
-
-#### Managing rules through the chart
-
-`NodeReadinessRule` objects can be shipped with the release through the `nodeReadinessRules` value:
-
-```yaml
-nodeReadinessRules:
-  - name: kube-proxy-unhealthy-noschedule
-    enforcementMode: continuous
-    conditions:
-      - type: KubeProxyUnhealthy
-        requiredStatus: "False"
-    taint:
-      key: readiness.k8s.io/KubeProxyUnhealthy
-      value: "true"
-      effect: NoSchedule
-    nodeSelector:
-      matchLabels:
-        kubernetes.io/os: linux
-```
-
-`nodeSelector` is required on every entry. Set it explicitly, since an empty selector matches every node in the cluster.
-
-> [!NOTE]
-> With the validating webhook enabled, apply rules only once the controller is serving admission requests. On a first install the webhook is not ready while the rules in the same release are being created, so install the controller first and add the rules in a follow-up `helm upgrade`.
 
 #### Upgrading
 
@@ -312,9 +283,6 @@ The controller uses a **finalizer** (`readiness.node.x-k8s.io/cleanup-taints`) o
     # OR if using Static Pods
     # Remove the manifest from /etc/kubernetes/manifests/ on all control-plane nodes
     ```
-
-    > [!CAUTION]
-    > Rules declared through the chart's `nodeReadinessRules` value are part of the release, so `helm uninstall` deletes them and the controller in one operation. Helm does not wait for the finalizer to run, which is exactly the situation described in [Recovering from Stuck Resources](#recovering-from-stuck-resources). Delete the rules and let them finish terminating before uninstalling the release.
 
 3.  **Uninstall CRDs** (Optional):
     ```sh
